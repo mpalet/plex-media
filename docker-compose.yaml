@@ -1,0 +1,155 @@
+version: '3'
+services:
+  plex:
+    container_name: plex
+    image: plexinc/pms-docker
+    restart: unless-stopped
+    environment:
+      - TZ=UTC
+      - PLEX_CLAIM=${PLEX_CLAIM_TOKEN}
+      - PLEX_UID=${PUID}
+      - PLEX_GID=${PUID}
+
+    network_mode: host
+    depends_on:
+      - rclone-mountupdate
+    volumes:
+      - ./plex:/config
+      - /tmp/transcode:/transcode
+      - ${REMOTE_PATH}:/data:shared
+  
+  rclone-mountupdate:
+    image: mpalet/rclone-mountupdate
+    build: ./docker/rclone-mountupdate/
+    container_name: plex.rclone-mountupdate
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - apparmor:unconfined
+    devices:
+      - /dev/fuse
+    volumes:
+      - ./rclone:/config
+      - ${UNION_PATH}:/data:shared
+      - ${REMOTE_PATH}:/data_remote
+      - ${TMP_PATH}:/data_temp
+    environment:
+      - RemotePath=${RCLONE_REMOTE}
+      - MountCommands=--buffer-size=1G --dir-cache-time 30s --max-read-ahead 1024k --transfers 20 --checkers 40 --uid ${PUID} --gid ${PGID} --allow-other --umask 0007
+      - ConfigName=rclone.conf
+
+  radarr:
+    image: hotio/suitarr
+    container_name: plex.radarr
+    expose:
+      - 8080
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./radarr:/config
+      - ./downloads:/downloads:shared
+      - ./data:/data:shared
+    links:
+      - deluge
+      - jackett
+    depends_on:
+      - rclone-mountupdate
+      - deluge
+      - jackett
+    environment:
+      - VIRTUAL_HOST=radarr.${HOST}
+      - LETSENCRYPT_HOST=radarr.${HOST}
+      - LETSENCRYPT_EMAIL=${EMAIL}
+      - VIRTUAL_PORT=8080
+      - APP=radarr
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - UMASK=022
+      - VERSION=stable
+      - BACKUP=yes
+    networks:
+      - default
+      - proxy-tier
+
+  sonarr:
+    image: hotio/suitarr
+    container_name: plex.sonarr
+    expose:
+       - 8080
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./sonarr:/config
+      - ./downloads:/downloads:shared
+      - ./data:/data:shared
+    depends_on:
+      - rclone-mountupdate
+      - deluge
+      - jackett
+    environment:
+      - VIRTUAL_HOST=sonarr.${HOST}
+      - LETSENCRYPT_HOST=sonarr.${HOST}
+      - LETSENCRYPT_EMAIL=${EMAIL}
+      - VIRTUAL_PORT=8080
+      - APP=sonarr
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - UMASK=022
+      - VERSION=stable
+      - BACKUP=yes
+    networks:
+      - default
+      - proxy-tier
+
+
+  jackett:
+    image: hotio/suitarr
+    container_name: plex.jackett
+    expose:
+       - 8080
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./jacket:/config
+    environment:
+      - VIRTUAL_HOST=jackett.${HOST}
+      - LETSENCRYPT_HOST=jackett.${HOST}
+      - LETSENCRYPT_EMAIL=${EMAIL}
+      - VIRTUAL_PORT=8080
+      - APP=jackett
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - UMASK=022
+      - VERSION=stable
+      - BACKUP=yes
+    networks:
+      - default
+      - proxy-tier
+ 
+  deluge:
+    image: linuxserver/deluge
+    container_name: plex.deluge
+    expose:
+      - "58846"
+      - "8112"
+      - "53160"
+      - "53160/udp"
+    volumes:
+      - ./deluge:/config
+      - ./downloads:/downloads:shared
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      - rclone-mountupdate
+    restart: always
+    environment:
+      - VIRTUAL_HOST=deluge.${HOST}
+      - LETSENCRYPT_HOST=deluge.${HOST}
+      - LETSENCRYPT_EMAIL=${EMAIL}
+      - VIRTUAL_PORT=8112
+      - PUID=${PUID}
+      - PGID=${PGID}
+    networks:
+      - default
+      - proxy-tier
+
+networks:
+  proxy-tier:
+    external:
+      name: nginx-proxy

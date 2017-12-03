@@ -1,0 +1,11 @@
+.env
+plex
+data
+data_remote
+deluge
+downloads  
+jacket  
+plex
+radarr
+rclone
+sonarr
